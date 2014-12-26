@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -e
+
+project_root=$(cd $(dirname ${BASH_SOURCE[0]})/.. && pwd)
+
+# virtualenv
+{
+    cd $project_root
+    [[ ! -e ./.ve ]] && pyvenv .ve
+}
+VIRTUAL_ENV_DISABLE_PROMPT=1
+source "$project_root/.ve/bin/activate"
+pip install -q -r $project_root/requirements.txt
+
+exec $SHELL
