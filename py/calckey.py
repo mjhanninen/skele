@@ -1,44 +1,65 @@
 #!/usr/bin/env python3
 
-# Depends on:
-# -pycrypto
-
-from Crypto.Hash import SHA
-from base64 import b32encode, b64encode
-from collections import namedtuple
+from Crypto.Hash import SHA256
 from getpass import getpass
 import sys
 
+def calc_key(servname, username, skeleton_key, count=1):
+    sha = SHA256.new()
+    sha.update(skeleton_key)
+    sha.update(servname.encode('UTF-8'))
+    sha.update(username.encode('UTF-8'))
+    keys = []
+    for i in range(count):
+        digest = sha.digest()
+        # Truncate to the first 80 bits; would prefer to use SHA-512/80 but
+        # PyCrypto supports neither SHA-512/t directly nor setting the initial
+        # hash value.
+        keys.append(digest[:10])
+        sha.update(skeleton_key)
+        sha.update(digest)
+    return keys
 
-def shrink(s, n=None):
+def _b32(b):
+    assert(len(b) % 5 == 0)
+    b = memoryview(b)
+    e = memoryview(bytearray(8 * (len(b) // 5)))
+    for i in range(0, len(b) // 5):
+        q = b[5 * i : 5 * (i + 1)]
+        r = e[8 * i : 8 * (i + 1)]
+        r[0] =  (q[0] >> 3)
+        r[1] = ((q[0] & 0b00000111) << 2) + (q[1] >> 6)
+        r[2] =  (q[1] & 0b00111110) >> 1
+        r[3] = ((q[1] & 0b00000001) << 4) + (q[2] >> 4)
+        r[4] = ((q[2] & 0b00001111) << 1) + (q[3] >> 7)
+        r[5] =  (q[3] & 0b01111100) >> 2
+        r[6] = ((q[3] & 0b00000011) << 3) + (q[4] >> 5)
+        r[7] =  (q[4] & 0b00011111)
+    return e.tobytes()
+
+COCKFORD_BASE = \
+    '0123456789abcdefghjkmnpqrstvwxyz'.encode('ascii') + bytes(256 - 32)
+
+def b32cockford(b):
+    """Encodes the given bytes with Cockford's B32 encoding. Returns bytes.
     """
-    Shrink `s` in to byte width `n`. If `n` is not given, it is half the width
-    of `s` rounded up to next integer number.
+    return _b32(b).translate(COCKFORD_BASE)
+
+def capfirst(s):
+    """Capitalizes the first alphabet of the string.
     """
-    if not isinstance(s, (bytes, bytearray)):
-        s = memoryview(s).tobytes()
-    if n is None:
-        n = len(s) // 2 + len(s) % 2
-    x = bytearray(n)
-    for i, b in enumerate(s):
-        x[i % n] ^= b
-    return bytes(x)
-
-def calc_key(servname, username, key):
-    h = SHA.new()
-    for s in (servname, username, key):
-        h.update(s.encode('UTF-8'))
-    return h.digest()
-
-def as_readable(key, do_group=False):
-    k = b32encode(shrink(key, 10)).decode('ascii')
-    if do_group:
-        return '-'.join([k[i:i+4] for i in range(0, len(k), 4)])
+    for i, c in enumerate(s):
+        if c.isalpha():
+            return s[:i] + s[i:i+1].upper() + s[i+1:]
     else:
-        return k
+        return s
 
-def as_old_style(key):
-    return b64encode(key).decode('ascii')
+def as_readable(key):
+    """Converts `key` into human readable and usable form.
+    """
+    b32 = b32cockford(key).decode('ascii')
+    groups = [capfirst(b32[i:i+4]) for i in range(0, len(b32), 4)]
+    return '-'.join(groups)
 
 def get_input(prompt, hide=False):
     print(prompt)
@@ -63,7 +84,9 @@ def get_skeleton_key():
             print('The skeleton key and its confirmation didn\'t match. '
                   'Please re-enter.')
         else:
-            return skeleton_key
+            hash = SHA256.new()
+            hash.update(skeleton_key.encode('UTF-8'))
+            return hash.digest()
 
 def ui():
     skeleton_key = get_skeleton_key()
@@ -72,6 +95,6 @@ def ui():
     return (servname, username, skeleton_key)
 
 if __name__ == '__main__':
-    key = calc_key(*ui())
-    print(as_readable(key, True))
-    print(as_old_style(key))
+    servname, username, skeleton_key = ui()
+    for i, key in enumerate(calc_key(servname, username, skeleton_key, 5)):
+        print('{:d}. {:s}'.format(i + 1, as_readable(key)))
