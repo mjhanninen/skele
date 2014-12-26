@@ -44,6 +44,7 @@ If you want to just use the package:
 
     $ cd path/to/project
     $ python3 setup.py install
+    $ skele
 
 In case you want hack around with the sources you probably want to set up a
 project local virtual environment:
