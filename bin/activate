@@ -12,5 +12,6 @@ project_root=$(cd $(dirname ${BASH_SOURCE[0]})/.. && pwd)
 VIRTUAL_ENV_DISABLE_PROMPT=1
 source "$project_root/.ve/bin/activate"
 pip install -q -r $project_root/requirements.txt
+export PYTHONPATH="$project_root/py:$PYTHONPATH"
 
 exec $SHELL

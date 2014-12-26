@@ -43,14 +43,14 @@ Installation
 If you want to just use the package:
 
     $ cd path/to/project
-    $ python setup.py install
+    $ python3 setup.py install
 
 In case you want hack around with the sources you probably want to set up a
 project local virtual environment:
 
     $ cd path/to/project
     $ ./bin/activate
-    $ ./py/calckey.py
+    $ python3 -m skele
 
 The virtual environment is set up to `./.ve` during the first time. This may
 take a moment or two.

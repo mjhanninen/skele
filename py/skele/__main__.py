@@ -1,0 +1,3 @@
+import skele
+
+skele.main()
