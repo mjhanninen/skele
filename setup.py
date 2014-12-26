@@ -1,3 +1,4 @@
+"""
 Skele
 =====
 
@@ -35,22 +36,35 @@ your online identity as follows:
 
 [diceware]: http://world.std.com/~reinhold/diceware.html
     (The Diceware Passphrase Home Page)
+"""
 
+from setuptools import setup
 
-Installation
-------------
-
-If you want to just use the package:
-
-    $ cd path/to/project
-    $ python setup.py install
-
-In case you want hack around with the sources you probably want to set up a
-project local virtual environment:
-
-    $ cd path/to/project
-    $ ./bin/activate
-    $ ./py/calckey.py
-
-The virtual environment is set up to `./.ve` during the first time. This may
-take a moment or two.
+setup(
+    name = 'Skele',
+    version = '0.1.0',
+    url = 'http://github.com/mjhanninen/skele.py',
+    license = 'BSD',
+    author = 'Matti Hänninen',
+    author_email = 'matti@mjhanninen.com',
+    description = 'A tool for computing unique passwords for your online '
+                  'identities',
+    long_description = __doc__,
+    package_dir = {'': 'py'},
+    packages = ['skele'],
+    zip_safe = True,
+    platforms = 'any',
+    install_requires = ['pycrypto'],
+    classifiers = [
+        'Development Status :: 4 - Beta',
+        'Environment :: Console',
+        'Intended Audience :: End Users/Desktop',
+        'License :: OSI Approved :: BSD License',
+        'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3 :: Only',
+        'Topic :: Security',
+    ],
+    entry_points = '''
+    [console_scripts]
+    skele=skele:main
+    ''')

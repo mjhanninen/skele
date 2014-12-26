@@ -92,7 +92,7 @@ def get_skeleton_key():
             hash.update(skeleton_key.encode('UTF-8'))
             return hash.digest()
 
-def ui():
+def main():
     skeleton_key = get_skeleton_key()
     while True:
         servname = get_input('Please enter the service name:')
@@ -101,4 +101,4 @@ def ui():
             print('{:d}. {:s}'.format(i + 1, as_readable(key)))
 
 if __name__ == '__main__':
-    ui()
+    main()
