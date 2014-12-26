@@ -90,11 +90,11 @@ def get_skeleton_key():
 
 def ui():
     skeleton_key = get_skeleton_key()
-    servname = get_input('Please enter the service name:')
-    username = get_input('Please enter the user name:')
-    return (servname, username, skeleton_key)
+    while True:
+        servname = get_input('Please enter the service name:')
+        username = get_input('Please enter the user name:')
+        for i, key in enumerate(calc_key(servname, username, skeleton_key, 5)):
+            print('{:d}. {:s}'.format(i + 1, as_readable(key)))
 
 if __name__ == '__main__':
-    servname, username, skeleton_key = ui()
-    for i, key in enumerate(calc_key(servname, username, skeleton_key, 5)):
-        print('{:d}. {:s}'.format(i + 1, as_readable(key)))
+    ui()
