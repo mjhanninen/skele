@@ -63,10 +63,14 @@ def as_readable(key):
 
 def get_input(prompt, hide=False):
     print(prompt)
-    if hide:
-        answer = getpass('> ')
-    else:
-        answer = input('> ')
+    try:
+        if hide:
+            answer = getpass('> ')
+        else:
+            answer = input('> ')
+    except EOFError:
+        print('')
+        sys.exit(1)
     if answer == '':
         sys.exit(1)
     else:
