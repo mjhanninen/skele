@@ -37,13 +37,13 @@ def _b32(b):
         r[7] =  (q[4] & 0b00011111)
     return e.tobytes()
 
-COCKFORD_BASE = \
+CROCKFORD_BASE = \
     '0123456789abcdefghjkmnpqrstvwxyz'.encode('ascii') + bytes(256 - 32)
 
-def b32cockford(b):
-    """Encodes the given bytes with Cockford's B32 encoding. Returns bytes.
+def b32crockford(b):
+    """Encodes the given bytes with Crockford's B32 encoding. Returns bytes.
     """
-    return _b32(b).translate(COCKFORD_BASE)
+    return _b32(b).translate(CROCKFORD_BASE)
 
 def capfirst(s):
     """Capitalizes the first alphabet of the string.
@@ -57,7 +57,7 @@ def capfirst(s):
 def as_readable(key):
     """Converts `key` into human readable and usable form.
     """
-    b32 = b32cockford(key).decode('ascii')
+    b32 = b32crockford(key).decode('ascii')
     groups = [capfirst(b32[i:i+4]) for i in range(0, len(b32), 4)]
     return '-'.join(groups)
 
