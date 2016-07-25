@@ -1,0 +1,17 @@
+[package]
+
+name          = "skele"
+version       = "0.2.0"
+authors       = ["Matti Hänninen <matti@mjhanninen.com>"]
+
+description   = "Command line tool for calculating unique passwords for your online identities"
+homepage      = "https://github.com/mjhanninen/skele.git"
+license       = "BSD"
+readme        = "../README.md"
+repository    = "https://github.com/mjhanninen/skele.git"
+
+[dependencies]
+
+rpassword     = "^0.2"
+rustybones    = { path = "../rustybones", version = "*" }
+term          = "^0.4"

@@ -1,5 +1,2 @@
-*.egg-info
-*.pyc
-/.ve/
-/build/
-/dist/
+target/
+Cargo.lock

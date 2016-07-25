@@ -1,0 +1,7 @@
+[package]
+name        = "rustybones"
+version     = "0.1.0"
+authors     = ["Matti Hänninen <matti@mjhanninen.com>"]
+
+[dependencies]
+rust-crypto = "^0.2"
