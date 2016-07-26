@@ -1,6 +1,9 @@
 extern crate rpassword;
 extern crate rustybones;
 extern crate term;
+extern crate uuid;
+extern crate serde;
+extern crate serde_json;
 
 use std::io;
 use rustybones::*;
@@ -51,11 +54,155 @@ fn alert(message: &str) {
     t.write("\n".as_bytes()).unwrap();
 }
 
-fn ask_skeleton_key() -> Option<String> {
+mod app_st {
+
+    use std::collections::HashSet;
+    use std::env;
+    use std::fs::{self, File};
+    use std::path::PathBuf;
+    use std::result;
+    use uuid::Uuid;
+
+    // We pretty much ignore all errors. However we want to use `try!` so we
+    // need a result type that too ignores all errors.
+    pub type Result<T> = result::Result<T, ()>;
+
+    pub fn dot_dir(create: bool) -> Option<PathBuf> {
+        env::home_dir().and_then(|mut path| {
+            path.push(".skele");
+            if path.exists() {
+                if path.is_dir() {
+                    Some(path)
+                } else {
+                    // This is an odd situation. Maybe the user should be
+                    // notified about it.
+                    None
+                }
+            } else if create {
+                // Failing to create a dot directory is inconvenient but not
+                // something that would make us halt the program. As we're not
+                // going to react in any way just swallow the error.
+                fs::create_dir(&path).ok().and(Some(path))
+            } else {
+                None
+            }
+        })
+    }
+
+    fn ensure_dot_dir() -> Result<()> {
+        dot_dir(true).map(|_| ()).ok_or(())
+    }
+
+    #[derive(Debug)]
+    pub struct State {
+        pub fingerprints: HashSet<String>,
+    }
+
+    impl State {
+        pub fn new() -> Self {
+            State { fingerprints: HashSet::new() }
+        }
+
+        pub fn learn_fingerprint(&mut self, fingerprint: &str) {
+            self.fingerprints.insert(fingerprint.to_owned());
+        }
+
+        pub fn is_known(&self, fingerprint: &str) -> bool {
+            self.fingerprints.contains(fingerprint)
+        }
+    }
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::de::{Visitor, MapVisitor};
+
+    impl Serialize for State {
+        fn serialize<S>(&self, serializer: &mut S) -> result::Result<(), S::Error>
+            where S: Serializer
+        {
+            let mut map_state = try!(serializer.serialize_map(Some(self.fingerprints.len())));
+            for k in &self.fingerprints {
+                try!(serializer.serialize_map_elt(&mut map_state, k, ""));
+            }
+            serializer.serialize_map_end(map_state)
+        }
+    }
+
+    struct StateVisitor;
+
+    impl Visitor for StateVisitor {
+        type Value = State;
+        fn visit_map<V: MapVisitor>(&mut self,
+                                    mut map_visitor: V)
+                                    -> result::Result<Self::Value, V::Error> {
+            let mut fingerprints = HashSet::new();
+            while let Some((k, _)) = try!(map_visitor.visit::<String, String>()) {
+                fingerprints.insert(k);
+            }
+            try!(map_visitor.end());
+            Ok(State { fingerprints: fingerprints })
+        }
+    }
+
+    impl Deserialize for State {
+        fn deserialize<D>(deserializer: &mut D) -> result::Result<Self, D::Error>
+            where D: Deserializer
+        {
+            deserializer.deserialize_map(StateVisitor)
+        }
+    }
+
+    fn state_file_path(decoration: Option<String>) -> Option<PathBuf> {
+        dot_dir(false).and_then(|mut path| {
+            let filename = match decoration {
+                Some(ref decoration) => format!("state_{}.json", decoration),
+                None => "state.json".to_owned(),
+            };
+            path.push(filename);
+            Some(path)
+        })
+    }
+
+    use serde_json::{ser, de};
+
+    fn load_app_state_(path: &PathBuf) -> Result<State> {
+        let state_file = try!(File::open(path).or(Err(())));
+        de::from_reader(state_file).or(Err(()))
+    }
+
+    pub fn load_app_state() -> Option<State> {
+        state_file_path(None)
+            .and_then(|path| {
+                if path.is_file() {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .and_then(|path| load_app_state_(&path).ok())
+    }
+
+    pub fn save_app_state(state: &State) -> Result<()> {
+        try!(ensure_dot_dir());
+        let temp_uuid = Uuid::new_v4();
+        let temp_path = try!(state_file_path(Some(temp_uuid.simple().to_string())).ok_or(()));
+        let mut temp_file = try!(File::create(&temp_path).or(Err(())));
+        try!(ser::to_writer(&mut temp_file, state).or(Err(())));
+        let path = try!(state_file_path(None).ok_or(()));
+        try!(fs::rename(&temp_path, &path).or(Err(())));
+        Ok(())
+    }
+}
+
+fn ask_skeleton_key(state: &mut app_st::State) -> Option<String> {
     loop {
         let key = ask("Skeleton key?", false);
         if key.is_empty() {
             return None;
+        }
+        let key_source = KeySource::new(&key);
+        let fingerprint = format_key(&key_source.fingerprint(), 8);
+        if state.is_known(&fingerprint) {
+            return Some(key);
         }
         let confirmation = ask("Please re-enter the skeleton key to confirm", false);
         if key == confirmation {
@@ -93,9 +240,15 @@ fn show_notice() {
 
 fn main() {
     show_notice();
-    match ask_skeleton_key() {
+    let mut app_state = app_st::load_app_state().unwrap_or(app_st::State::new());
+    match ask_skeleton_key(&mut app_state) {
         Some(skeleton_key) => {
             let key_source = KeySource::new(&skeleton_key);
+            let fingerprint = format_key(&key_source.fingerprint(), 8);
+            app_state.learn_fingerprint(&fingerprint);
+            app_st::save_app_state(&app_state).unwrap_or_else(|_| {
+                println!("Warning: Failed to save application state\n");
+            });
             show_fingerprint(&key_source);
             loop {
                 let domain = ask("Domain?", true);
