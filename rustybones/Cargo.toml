@@ -2,6 +2,7 @@
 name        = "rustybones"
 version     = "0.1.0"
 authors     = ["Matti Hänninen <matti@mjhanninen.com>"]
+edition     = "2015"
 
 [dependencies]
 rust-crypto = "^0.2"

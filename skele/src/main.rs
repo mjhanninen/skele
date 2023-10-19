@@ -1,12 +1,12 @@
 extern crate rpassword;
 extern crate rustybones;
-extern crate term;
-extern crate uuid;
 extern crate serde;
 extern crate serde_json;
+extern crate term;
+extern crate uuid;
 
-use std::io;
 use rustybones::*;
+use std::io;
 
 fn ask(prompt: &str, echo: bool) -> String {
     let mut t = term::stdout().unwrap();
@@ -24,11 +24,9 @@ fn ask(prompt: &str, echo: bool) -> String {
         buffer
     } else {
         let result = rpassword::read_password()
-            .or_else(|err| {
-                match err.kind() {
-                    io::ErrorKind::UnexpectedEof => Ok("".to_owned()),
-                    _ => Err(err),
-                }
+            .or_else(|err| match err.kind() {
+                io::ErrorKind::UnexpectedEof => Ok("".to_owned()),
+                _ => Err(err),
             })
             .unwrap();
         if !result.is_empty() {
@@ -100,7 +98,9 @@ mod app_st {
 
     impl State {
         pub fn new() -> Self {
-            State { fingerprints: HashSet::new() }
+            State {
+                fingerprints: HashSet::new(),
+            }
         }
 
         pub fn learn_fingerprint(&mut self, fingerprint: &str) {
@@ -112,16 +112,18 @@ mod app_st {
         }
     }
 
+    use serde::de::{MapVisitor, Visitor};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use serde::de::{Visitor, MapVisitor};
 
     impl Serialize for State {
         fn serialize<S>(&self, serializer: &mut S) -> result::Result<(), S::Error>
-            where S: Serializer
+        where
+            S: Serializer,
         {
             let mut map_state = try!(serializer.serialize_map(Some(self.fingerprints.len())));
             for k in &self.fingerprints {
-                try!(serializer.serialize_map_elt(&mut map_state, k, ""));
+                try!(serializer.serialize_map_key(&mut map_state, k));
+                try!(serializer.serialize_map_value(&mut map_state, ""));
             }
             serializer.serialize_map_end(map_state)
         }
@@ -131,21 +133,25 @@ mod app_st {
 
     impl Visitor for StateVisitor {
         type Value = State;
-        fn visit_map<V: MapVisitor>(&mut self,
-                                    mut map_visitor: V)
-                                    -> result::Result<Self::Value, V::Error> {
+        fn visit_map<V: MapVisitor>(
+            &mut self,
+            mut map_visitor: V,
+        ) -> result::Result<Self::Value, V::Error> {
             let mut fingerprints = HashSet::new();
             while let Some((k, _)) = try!(map_visitor.visit::<String, String>()) {
                 fingerprints.insert(k);
             }
             try!(map_visitor.end());
-            Ok(State { fingerprints: fingerprints })
+            Ok(State {
+                fingerprints: fingerprints,
+            })
         }
     }
 
     impl Deserialize for State {
         fn deserialize<D>(deserializer: &mut D) -> result::Result<Self, D::Error>
-            where D: Deserializer
+        where
+            D: Deserializer,
         {
             deserializer.deserialize_map(StateVisitor)
         }
@@ -162,7 +168,7 @@ mod app_st {
         })
     }
 
-    use serde_json::{ser, de};
+    use serde_json::{de, ser};
 
     fn load_app_state_(path: &PathBuf) -> Result<State> {
         let state_file = try!(File::open(path).or(Err(())));
@@ -171,13 +177,7 @@ mod app_st {
 
     pub fn load_app_state() -> Option<State> {
         state_file_path(None)
-            .and_then(|path| {
-                if path.is_file() {
-                    Some(path)
-                } else {
-                    None
-                }
-            })
+            .and_then(|path| if path.is_file() { Some(path) } else { None })
             .and_then(|path| load_app_state_(&path).ok())
     }
 
@@ -218,7 +218,8 @@ fn show_fingerprint(key_source: &KeySource) {
     t.fg(term::color::GREEN).unwrap();
     t.write("Confirmed: ".as_bytes()).unwrap();
     t.reset().unwrap();
-    t.write("The fingerprint of the skeleton key is ".as_bytes()).unwrap();
+    t.write("The fingerprint of the skeleton key is ".as_bytes())
+        .unwrap();
     t.attr(term::Attr::Bold).unwrap();
     t.write(fingerprint.as_bytes()).unwrap();
     t.reset().unwrap();
