@@ -259,8 +259,8 @@ mod tests {
         let mut base32_key = [0u8; 16];
         base32::encode(&key, &mut base32_key);
         let key_str = base32::to_crockford(&base32_key);
-        println!("First key = {}", key_str);
+        assert_eq!(key_str, "5wscx2mzcsnc4vgc");
         let key_str_2 = to_canonical(&key_str);
-        println!("Canonical key = {}", key_str_2);
+        assert_eq!(key_str_2, "5Wsc-X2mz-Csnc-4Vgc");
     }
 }
