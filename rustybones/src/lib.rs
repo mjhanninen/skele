@@ -1,21 +1,17 @@
 // #![no_std]
 
-extern crate crypto;
+extern crate hmac_sha256;
 
-use crypto::digest::Digest;
-use crypto::sha2::Sha256;
-use std::vec::Vec;
-// use std::slice::SliceConcatExt;
+use std::mem;
 
 pub const PREPARED_SKELETON_KEY_SIZE: usize = 32;
 
-pub fn prepare_skeleton_key(plain_text: &str, prepared_key: &mut [u8]) -> Result<(), ()> {
+pub fn prepare_skeleton_key(plain_text: &str, prepared_key: &mut [u8; 32]) -> Result<(), ()> {
     if prepared_key.len() != PREPARED_SKELETON_KEY_SIZE {
         Err(())
     } else {
-        let mut hasher = Sha256::new();
-        hasher.input_str(plain_text);
-        hasher.result(prepared_key);
+        let mut result = hmac_sha256::Hash::hash(plain_text.as_bytes());
+        mem::swap(&mut result, prepared_key);
         Ok(())
     }
 }
@@ -27,7 +23,7 @@ pub struct KeySource {
 pub struct KeyIter<'a> {
     sk: &'a [u8; 32],
     hash: [u8; 32],
-    hasher: Sha256,
+    hasher: hmac_sha256::Hash,
 }
 
 const FINGERPRINT_SALT: [u8; 32] = [
@@ -48,11 +44,11 @@ impl KeySource {
 
     pub fn fingerprint(&self) -> Vec<u8> {
         let mut buffer = [0u8; 32];
-        let mut hasher = Sha256::new();
-        hasher.input(&self.sk);
-        hasher.input(&FINGERPRINT_SALT);
-        hasher.result(&mut buffer);
-        buffer[..5].to_owned()
+        let mut hasher = hmac_sha256::Hash::new();
+        hasher.update(&self.sk);
+        hasher.update(&FINGERPRINT_SALT);
+        let result = hasher.finalize();
+        result[..5].to_owned()
     }
 }
 
@@ -67,17 +63,14 @@ impl<'a> KeyIter<'a> {
         let mut key_iter = KeyIter {
             sk,
             hash: [0u8; 32],
-            hasher: Sha256::new(),
+            hasher: hmac_sha256::Hash::new(),
         };
         {
             let h = &mut key_iter.hasher;
-            h.input(sk);
-            h.input_str(domain);
-            h.input_str(identity);
-            // For some reason the hasher is designed so that it cannot
-            // be used once the digest has been extracted. We code
-            // around this by taking a clone.
-            h.clone().result(&mut key_iter.hash);
+            h.update(sk);
+            h.update(domain.as_bytes());
+            h.update(identity.as_bytes());
+            key_iter.hash = h.clone().finalize();
         }
         key_iter
     }
@@ -91,19 +84,21 @@ impl<'a> Drop for KeyIter<'a> {
 
 impl<'a> Iterator for KeyIter<'a> {
     type Item = Vec<u8>;
-    #[allow(unused_assignments)]
     fn next(&mut self) -> Option<Self::Item> {
-        // Get the first 80 bits as the generated key. I would have
-        // preferred to use SHA-512/80 but the library (PyCrypto)
-        // used in the original implementation didn't neither support
-        // SHA-512/t directly nor allow setting the initial hash value
-        // in which case I could have implemented the algorithm myself.
-        // Now I'm stuck with this choice.
+        //
+        // Get the first 80 bits as the generated key.
+        //
+        // I would have preferred to use SHA-512/80 but the library (PyCrypto)
+        // that I used in the original implementation did not support SHA-512/
+        // t directly nor did it allow setting the initial hash value (in which
+        // case I could have implemented the algorithm myself). Now I'm stuck
+        // with this choice.
+        //
         let item = self.hash[0..10].to_vec();
         let h = &mut self.hasher;
-        h.input(self.sk);
-        h.input(&self.hash);
-        h.clone().result(&mut self.hash);
+        h.update(self.sk);
+        h.update(self.hash);
+        self.hash = h.clone().finalize();
         Some(item)
     }
 }

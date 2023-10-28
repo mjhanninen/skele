@@ -5,4 +5,4 @@ authors     = ["Matti Hänninen <matti@mjhanninen.com>"]
 edition     = "2015"
 
 [dependencies]
-rust-crypto = "^0.2"
+hmac-sha256 = "1.1.7"
