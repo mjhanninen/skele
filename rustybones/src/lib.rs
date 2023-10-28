@@ -6,6 +6,8 @@ use std::mem;
 
 pub const PREPARED_SKELETON_KEY_SIZE: usize = 32;
 
+// XXX(soija) TODO: Introduce a proper error type instead of a unit.
+#[allow(clippy::result_unit_err)]
 pub fn prepare_skeleton_key(plain_text: &str, prepared_key: &mut [u8; 32]) -> Result<(), ()> {
     if prepared_key.len() != PREPARED_SKELETON_KEY_SIZE {
         Err(())
@@ -34,7 +36,7 @@ const FINGERPRINT_SALT: [u8; 32] = [
 impl KeySource {
     pub fn new(key: &str) -> Self {
         let mut key_source = KeySource { sk: [0u8; 32] };
-        prepare_skeleton_key(&key, &mut key_source.sk).unwrap();
+        prepare_skeleton_key(key, &mut key_source.sk).unwrap();
         key_source
     }
 
@@ -43,10 +45,9 @@ impl KeySource {
     }
 
     pub fn fingerprint(&self) -> Vec<u8> {
-        let mut buffer = [0u8; 32];
         let mut hasher = hmac_sha256::Hash::new();
-        hasher.update(&self.sk);
-        hasher.update(&FINGERPRINT_SALT);
+        hasher.update(self.sk);
+        hasher.update(FINGERPRINT_SALT);
         let result = hasher.finalize();
         result[..5].to_owned()
     }
@@ -70,7 +71,7 @@ impl<'a> KeyIter<'a> {
             h.update(sk);
             h.update(domain.as_bytes());
             h.update(identity.as_bytes());
-            key_iter.hash = h.clone().finalize();
+            key_iter.hash = (*h).finalize();
         }
         key_iter
     }
@@ -98,7 +99,7 @@ impl<'a> Iterator for KeyIter<'a> {
         let h = &mut self.hasher;
         h.update(self.sk);
         h.update(self.hash);
-        self.hash = h.clone().finalize();
+        self.hash = (*h).finalize();
         Some(item)
     }
 }
@@ -164,7 +165,7 @@ pub struct SplitGroups<'a> {
 }
 
 pub fn split_groups(string: &str, group_size: usize) -> SplitGroups {
-    if string.len() > 0 && group_size > 0 {
+    if !string.is_empty() && group_size > 0 {
         SplitGroups {
             string,
             start: 0,
@@ -225,7 +226,7 @@ pub fn format_key(key: &[u8], group_size: usize) -> String {
     assert!(group_size > 0);
     let n = (key.len() / 5) * 8;
     let mut b32_key = vec![0u8; n];
-    base32::encode(&key, &mut b32_key);
+    base32::encode(key, &mut b32_key);
     let key_str = base32::to_crockford(&b32_key);
     let key_str = split_groups(&key_str, group_size)
         .map(upcase_first)

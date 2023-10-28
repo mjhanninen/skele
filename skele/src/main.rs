@@ -1,22 +1,14 @@
-extern crate rpassword;
-extern crate rustybones;
-extern crate serde;
-extern crate serde_json;
-extern crate term;
-extern crate uuid;
-
 use rustybones::*;
 use std::io;
 
 fn ask(prompt: &str, echo: bool) -> String {
     let mut t = term::stdout().unwrap();
     t.fg(term::color::YELLOW).unwrap();
-    t.write(prompt.as_bytes()).unwrap();
-    t.write("\n".as_bytes()).unwrap();
+    writeln!(t, "{}", prompt).unwrap();
     t.fg(term::color::WHITE).unwrap();
-    t.write("> ".as_bytes()).unwrap();
+    write!(t, "> ").unwrap();
     t.flush().unwrap();
-    let output = if echo {
+    if echo {
         let mut buffer = String::new();
         io::stdin().read_line(&mut buffer).unwrap();
         // Discard newline
@@ -36,20 +28,19 @@ fn ask(prompt: &str, echo: bool) -> String {
             t.cursor_up().unwrap();
             t.carriage_return().unwrap();
             t.delete_line().unwrap();
-            t.write("> [secret]\n".as_bytes()).unwrap();
+            writeln!(t, "> [secret]").unwrap();
         }
         result
-    };
-    output
+    }
 }
 
 fn alert(message: &str) {
     let mut t = term::stdout().unwrap();
     t.fg(term::color::RED).unwrap();
-    t.write("Error: ".as_bytes()).unwrap();
+    write!(t, "Error: ").unwrap();
     t.fg(term::color::WHITE).unwrap();
-    t.write(message.as_bytes()).unwrap();
-    t.write("\n".as_bytes()).unwrap();
+    write!(t, "{}", message).unwrap();
+    writeln!(t).unwrap();
 }
 
 mod app_st {
@@ -66,6 +57,8 @@ mod app_st {
     pub type Result<T> = result::Result<T, ()>;
 
     pub fn dot_dir(create: bool) -> Option<PathBuf> {
+        // XXX(soija) TODO: Replace `home_dir` with something else
+        #[allow(deprecated)]
         env::home_dir().and_then(|mut path| {
             path.push(".skele");
             if path.exists() {
@@ -120,10 +113,10 @@ mod app_st {
         where
             S: Serializer,
         {
-            let mut map_state = try!(serializer.serialize_map(Some(self.fingerprints.len())));
+            let mut map_state = serializer.serialize_map(Some(self.fingerprints.len()))?;
             for k in &self.fingerprints {
-                try!(serializer.serialize_map_key(&mut map_state, k));
-                try!(serializer.serialize_map_value(&mut map_state, ""));
+                serializer.serialize_map_key(&mut map_state, k)?;
+                serializer.serialize_map_value(&mut map_state, "")?;
             }
             serializer.serialize_map_end(map_state)
         }
@@ -138,13 +131,11 @@ mod app_st {
             mut map_visitor: V,
         ) -> result::Result<Self::Value, V::Error> {
             let mut fingerprints = HashSet::new();
-            while let Some((k, _)) = try!(map_visitor.visit::<String, String>()) {
+            while let Some((k, _)) = map_visitor.visit::<String, String>()? {
                 fingerprints.insert(k);
             }
-            try!(map_visitor.end());
-            Ok(State {
-                fingerprints: fingerprints,
-            })
+            map_visitor.end()?;
+            Ok(State { fingerprints })
         }
     }
 
@@ -158,20 +149,20 @@ mod app_st {
     }
 
     fn state_file_path(decoration: Option<String>) -> Option<PathBuf> {
-        dot_dir(false).and_then(|mut path| {
+        dot_dir(false).map(|mut path| {
             let filename = match decoration {
                 Some(ref decoration) => format!("state_{}.json", decoration),
                 None => "state.json".to_owned(),
             };
             path.push(filename);
-            Some(path)
+            path
         })
     }
 
     use serde_json::{de, ser};
 
     fn load_app_state_(path: &PathBuf) -> Result<State> {
-        let state_file = try!(File::open(path).or(Err(())));
+        let state_file = File::open(path).or(Err(()))?;
         de::from_reader(state_file).or(Err(()))
     }
 
@@ -182,13 +173,13 @@ mod app_st {
     }
 
     pub fn save_app_state(state: &State) -> Result<()> {
-        try!(ensure_dot_dir());
+        ensure_dot_dir()?;
         let temp_uuid = Uuid::new_v4();
-        let temp_path = try!(state_file_path(Some(temp_uuid.simple().to_string())).ok_or(()));
-        let mut temp_file = try!(File::create(&temp_path).or(Err(())));
-        try!(ser::to_writer(&mut temp_file, state).or(Err(())));
-        let path = try!(state_file_path(None).ok_or(()));
-        try!(fs::rename(&temp_path, &path).or(Err(())));
+        let temp_path = state_file_path(Some(temp_uuid.simple().to_string())).ok_or(())?;
+        let mut temp_file = File::create(&temp_path).or(Err(()))?;
+        ser::to_writer(&mut temp_file, state).or(Err(()))?;
+        let path = state_file_path(None).ok_or(())?;
+        fs::rename(&temp_path, path).or(Err(()))?;
         Ok(())
     }
 }
@@ -216,23 +207,21 @@ fn show_fingerprint(key_source: &KeySource) {
     let fingerprint = format_key(&key_source.fingerprint(), 8);
     let mut t = term::stdout().unwrap();
     t.fg(term::color::GREEN).unwrap();
-    t.write("Confirmed: ".as_bytes()).unwrap();
+    write!(t, "Confirmed: ").unwrap();
     t.reset().unwrap();
-    t.write("The fingerprint of the skeleton key is ".as_bytes())
-        .unwrap();
+    write!(t, "The fingerprint of the skeleton key is ").unwrap();
     t.attr(term::Attr::Bold).unwrap();
-    t.write(fingerprint.as_bytes()).unwrap();
+    write!(t, "{}", fingerprint).unwrap();
     t.reset().unwrap();
-    t.write("\n".as_bytes()).unwrap();
+    writeln!(t).unwrap();
 }
 
 fn show_key(ix: usize, key: &str) {
     let mut t = term::stdout().unwrap();
     t.fg(term::color::GREEN).unwrap();
-    t.write(format!("{}: ", ix + 1).as_bytes()).unwrap();
+    write!(t, "{}:", ix + 1).unwrap();
     t.reset().unwrap();
-    t.write(key.as_bytes()).unwrap();
-    t.write("\n".as_bytes()).unwrap();
+    writeln!(t, "{}", key).unwrap();
 }
 
 fn show_notice() {
@@ -242,29 +231,26 @@ fn show_notice() {
 fn main() {
     show_notice();
     let mut app_state = app_st::load_app_state().unwrap_or(app_st::State::new());
-    match ask_skeleton_key(&mut app_state) {
-        Some(skeleton_key) => {
-            let key_source = KeySource::new(&skeleton_key);
-            let fingerprint = format_key(&key_source.fingerprint(), 8);
-            app_state.learn_fingerprint(&fingerprint);
-            app_st::save_app_state(&app_state).unwrap_or_else(|_| {
-                println!("Warning: Failed to save application state\n");
-            });
-            show_fingerprint(&key_source);
-            loop {
-                let domain = ask("Domain?", true);
-                if domain.is_empty() {
-                    break;
-                }
-                let identity = ask("Identity?", true);
-                if identity.is_empty() {
-                    break;
-                }
-                for (ix, key) in key_source.keys(&domain, &identity).take(5).enumerate() {
-                    show_key(ix, &format_key(&key, 4));
-                }
+    if let Some(skeleton_key) = ask_skeleton_key(&mut app_state) {
+        let key_source = KeySource::new(&skeleton_key);
+        let fingerprint = format_key(&key_source.fingerprint(), 8);
+        app_state.learn_fingerprint(&fingerprint);
+        app_st::save_app_state(&app_state).unwrap_or_else(|_| {
+            println!("Warning: Failed to save application state\n");
+        });
+        show_fingerprint(&key_source);
+        loop {
+            let domain = ask("Domain?", true);
+            if domain.is_empty() {
+                break;
+            }
+            let identity = ask("Identity?", true);
+            if identity.is_empty() {
+                break;
+            }
+            for (ix, key) in key_source.keys(&domain, &identity).take(5).enumerate() {
+                show_key(ix, &format_key(&key, 4));
             }
         }
-        None => (),
     }
 }
