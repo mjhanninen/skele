@@ -1,8 +1,8 @@
 [package]
 name          = "skele"
-version       = "0.2.1"
+version       = "0.2.2"
 authors       = ["Matti Hänninen <matti@mjhanninen.com>"]
-description   = "Command line tool for calculating unique passwords for your online identities"
+description   = "Command line tool for calculating passwords for online identities"
 homepage      = "https://github.com/mjhanninen/skele.git"
 license       = "BSD"
 readme        = "../README.md"

@@ -1,10 +1,11 @@
 Skele
 =====
 
+> 🖐 **Warning:** Do not use this.  Just don't.  Way better and actually secure
+> alternatives exist.
+
 **Skele** is a command line utility for computing unique passwords for
 different services and identities.
-
-[![asciicast](https://asciinema.org/a/38gwm8i8q7ht7jbs1ezg0morf.png)](https://asciinema.org/a/38gwm8i8q7ht7jbs1ezg0morf)
 
 Skele is based on the idea that you can use a cryptographic password in
 combination with your identity to calculate a password that you can use with
