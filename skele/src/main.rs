@@ -105,44 +105,46 @@ mod app_st {
         }
     }
 
-    use serde::de::{MapVisitor, Visitor};
+    use serde::de::{MapAccess, Visitor};
+    use serde::ser::SerializeMap;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     impl Serialize for State {
-        fn serialize<S>(&self, serializer: &mut S) -> result::Result<(), S::Error>
+        fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
             let mut map_state = serializer.serialize_map(Some(self.fingerprints.len()))?;
             for k in &self.fingerprints {
-                serializer.serialize_map_key(&mut map_state, k)?;
-                serializer.serialize_map_value(&mut map_state, "")?;
+                map_state.serialize_entry(k, "")?;
             }
-            serializer.serialize_map_end(map_state)
+            map_state.end()
         }
     }
 
     struct StateVisitor;
 
-    impl Visitor for StateVisitor {
+    impl<'de> Visitor<'de> for StateVisitor {
         type Value = State;
-        fn visit_map<V: MapVisitor>(
-            &mut self,
-            mut map_visitor: V,
-        ) -> result::Result<Self::Value, V::Error> {
+        fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fmt.write_str("a map with string values")
+        }
+        fn visit_map<M: MapAccess<'de>>(
+            self,
+            mut access: M,
+        ) -> result::Result<Self::Value, M::Error> {
             let mut fingerprints = HashSet::new();
-            while let Some((k, _)) = map_visitor.visit::<String, String>()? {
+            while let Some((k, _)) = access.next_entry::<String, String>()? {
                 fingerprints.insert(k);
             }
-            map_visitor.end()?;
             Ok(State { fingerprints })
         }
     }
 
-    impl Deserialize for State {
-        fn deserialize<D>(deserializer: &mut D) -> result::Result<Self, D::Error>
+    impl<'de> Deserialize<'de> for State {
+        fn deserialize<D>(deserializer: D) -> result::Result<Self, D::Error>
         where
-            D: Deserializer,
+            D: Deserializer<'de>,
         {
             deserializer.deserialize_map(StateVisitor)
         }
