@@ -1,7 +1,5 @@
 // #![no_std]
 
-extern crate hmac_sha256;
-
 use std::mem;
 
 pub const PREPARED_SKELETON_KEY_SIZE: usize = 32;

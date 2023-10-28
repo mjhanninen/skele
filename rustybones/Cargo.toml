@@ -2,7 +2,7 @@
 name        = "rustybones"
 version     = "0.1.0"
 authors     = ["Matti Hänninen <matti@mjhanninen.com>"]
-edition     = "2015"
+edition     = "2021"
 
 [dependencies]
 hmac-sha256 = "1.1.7"
