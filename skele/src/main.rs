@@ -50,7 +50,6 @@ mod app_st {
     use std::fs::{self, File};
     use std::path::PathBuf;
     use std::result;
-    use uuid::Uuid;
 
     // We pretty much ignore all errors. However we want to use `try!` so we
     // need a result type that too ignores all errors.
@@ -153,7 +152,7 @@ mod app_st {
     fn state_file_path(decoration: Option<String>) -> Option<PathBuf> {
         dot_dir(false).map(|mut path| {
             let filename = match decoration {
-                Some(ref decoration) => format!("state_{}.json", decoration),
+                Some(ref decoration) => format!("state.{}.json", decoration),
                 None => "state.json".to_owned(),
             };
             path.push(filename);
@@ -176,8 +175,7 @@ mod app_st {
 
     pub fn save_app_state(state: &State) -> Result<()> {
         ensure_dot_dir()?;
-        let temp_uuid = Uuid::new_v4();
-        let temp_path = state_file_path(Some(temp_uuid.simple().to_string())).ok_or(())?;
+        let temp_path = state_file_path(Some(format!("{}", std::process::id()))).ok_or(())?;
         let mut temp_file = File::create(&temp_path).or(Err(()))?;
         ser::to_writer(&mut temp_file, state).or(Err(()))?;
         let path = state_file_path(None).ok_or(())?;
