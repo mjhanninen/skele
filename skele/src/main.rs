@@ -118,7 +118,7 @@ fn domain_identity_loop(key_source: &KeySource) -> io::Result<bool> {
       _ => return Ok(false),
     };
 
-    let maybe_identity = match answer::<String>(prompt_one(
+    let identity = match answer::<String>(prompt_one(
       Question::input("identity")
         .message("Identity")
         .validate_on_key(|input, _| !input.is_empty() && input.trim() == input)
@@ -135,18 +135,15 @@ fn domain_identity_loop(key_source: &KeySource) -> io::Result<bool> {
         })
         .on_esc(OnEsc::Terminate),
     ))? {
-      Answer::Value(v) => Some(v),
-      Answer::Aborted => None,
+      Answer::Value(v) => v,
+      Answer::Aborted => continue,
       _ => return Ok(false),
     };
 
-    if let Some(identity) = maybe_identity {
-      if !identity.is_empty() {
-        for (ix, key) in key_source.keys(&domain, &identity).take(5).enumerate()
-        {
-          out::show_key(ix, &format_key(&key, 4))?;
-        }
-      }
+    assert!(!identity.is_empty());
+
+    for (ix, key) in key_source.keys(&domain, &identity).take(5).enumerate() {
+      out::show_key(ix, &format_key(&key, 4))?;
     }
   }
 }
@@ -240,11 +237,7 @@ mod out {
   }
 
   pub fn show_notice() -> io::Result<()> {
-    stdout().execute(Print(format!(
-      "Skele, version {}\n",
-      env!("CARGO_PKG_VERSION")
-    )))?;
-    Ok(())
+    info("Skele", &format!("version {}", env!("CARGO_PKG_VERSION")))
   }
 }
 
