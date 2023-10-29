@@ -11,7 +11,7 @@ fn main() {
 fn run() -> io::Result<()> {
   out::show_notice()?;
   let mut app_state = app_st::load_app_state().unwrap_or(app_st::State::new());
-  while let Some(skeleton_key) = ask_skeleton_key(&mut app_state)? {
+  while let Some(skeleton_key) = ask_skeleton_key(&app_state)? {
     let key_source = KeySource::new(&skeleton_key);
     let fingerprint = format_key(&key_source.fingerprint(), 8);
     app_state.learn_fingerprint(&fingerprint);
@@ -25,7 +25,7 @@ fn run() -> io::Result<()> {
   Ok(())
 }
 
-fn ask_skeleton_key(state: &mut app_st::State) -> io::Result<Option<String>> {
+fn ask_skeleton_key(state: &app_st::State) -> io::Result<Option<String>> {
   loop {
     let key = match answer::<String>(prompt_one(
       Question::password("key")
