@@ -297,8 +297,9 @@ mod clipboard {
 #[cfg(target_os = "macos")]
 mod clipboard {
 
-  pub fn copy(_key: &str) {
-    todo!()
+  pub fn copy(key: &str) {
+    let mut clipboard = arboard::Clipboard::new().unwrap();
+    clipboard.set_text(key).unwrap();
   }
 }
 
