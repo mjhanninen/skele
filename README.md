@@ -57,7 +57,7 @@ $ cargo install --path skele
 License
 -------
 
-Copyright (C) 2014-2016 Matti Hänninen
+Copyright © 2014-2023 Matti Hänninen
 
 This software is licensed under the BSD 3-Clause License. Please see
 `LICENSE.txt` for details.
