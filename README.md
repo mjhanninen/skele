@@ -50,10 +50,7 @@ Installation
 If you just want to use the package:
 
 ```
-$ cd path/to/repository
-$ cd skele
-$ cargo install
-$ skele
+$ cargo install --path skele
 ```
 
 
