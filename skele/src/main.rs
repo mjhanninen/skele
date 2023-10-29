@@ -1,6 +1,6 @@
 use std::io;
 
-use requestty::{prompt_one, OnEsc, Question};
+use requestty::{prompt_one, ExpandItem, OnEsc, Question};
 use requestty_utils::{answer, Answer};
 use rustybones::*;
 
@@ -142,8 +142,41 @@ fn domain_identity_loop(key_source: &KeySource) -> io::Result<bool> {
 
     assert!(!identity.is_empty());
 
-    for (ix, key) in key_source.keys(&domain, &identity).take(5).enumerate() {
-      out::show_key(ix, &format_key(&key, 4))?;
+    enum Action {
+      CopyToClipboard,
+      Reveal,
+    }
+
+    let action = match answer::<ExpandItem>(prompt_one(
+      Question::expand("action")
+        .message("Action")
+        .choices([('c', "Copy to clipboard"), ('r', "Reveal")])
+        .default('c')
+        .on_esc(OnEsc::Terminate),
+    ))? {
+      Answer::Value(ExpandItem { key, .. }) => match key {
+        'c' => Action::CopyToClipboard,
+        'r' => Action::Reveal,
+        _ => unreachable!(),
+      },
+      Answer::Aborted => continue,
+      _ => return Ok(false),
+    };
+
+    match action {
+      Action::CopyToClipboard => {
+        if let Some(key) = key_source.keys(&domain, &identity).next() {
+          clipboard::copy(&format_key(&key, 4));
+        } else {
+          unreachable!()
+        }
+      }
+      Action::Reveal => {
+        for (ix, key) in key_source.keys(&domain, &identity).take(5).enumerate()
+        {
+          out::show_key(ix, &format_key(&key, 4))?;
+        }
+      }
     }
   }
 }
@@ -238,6 +271,34 @@ mod out {
 
   pub fn show_notice() -> io::Result<()> {
     info("Skele", &format!("version {}", env!("CARGO_PKG_VERSION")))
+  }
+}
+
+//
+// Clipboard helpers
+//
+
+#[cfg(target_os = "linux")]
+mod clipboard {
+  use wl_clipboard_rs::copy::{MimeType, Options, ServeRequests, Source};
+
+  pub fn copy(key: &str) {
+    let mut options = Options::new();
+    options
+      .foreground(true)
+      .trim_newline(true)
+      .serve_requests(ServeRequests::Only(1));
+    options
+      .copy(Source::Bytes(key.as_bytes().into()), MimeType::Text)
+      .unwrap();
+  }
+}
+
+#[cfg(target_os = "macos")]
+mod clipboard {
+
+  pub fn copy(_key: &str) {
+    todo!()
   }
 }
 
@@ -416,6 +477,16 @@ mod requestty_utils {
   impl From<requestty::Answer> for Answer<bool> {
     fn from(answer: requestty::Answer) -> Self {
       if let Ok(value) = answer.try_into_bool() {
+        Answer::Value(value)
+      } else {
+        panic!("illegal answer type");
+      }
+    }
+  }
+
+  impl From<requestty::Answer> for Answer<requestty::ExpandItem> {
+    fn from(answer: requestty::Answer) -> Self {
+      if let requestty::Answer::ExpandItem(value) = answer {
         Answer::Value(value)
       } else {
         panic!("illegal answer type");
