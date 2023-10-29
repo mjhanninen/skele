@@ -221,7 +221,7 @@ fn show_key(ix: usize, key: &str) {
     t.fg(term::color::GREEN).unwrap();
     write!(t, "{}:", ix + 1).unwrap();
     t.reset().unwrap();
-    writeln!(t, "{}", key).unwrap();
+    writeln!(t, " {}", key).unwrap();
 }
 
 fn show_notice() {
