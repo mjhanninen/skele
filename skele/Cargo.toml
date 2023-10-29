@@ -1,10 +1,10 @@
 [package]
 name          = "skele"
-version       = "0.2.2"
+version       = "0.3.0"
 authors       = ["Matti Hänninen <matti@mjhanninen.com>"]
 description   = "Command line tool for calculating passwords for online identities"
 homepage      = "https://github.com/mjhanninen/skele.git"
-license       = "BSD"
+license       = "GPL-3.0-or-later"
 readme        = "../README.md"
 repository    = "https://github.com/mjhanninen/skele.git"
 edition       = "2021"

@@ -2,6 +2,7 @@
 name        = "rustybones"
 version     = "0.1.0"
 authors     = ["Matti Hänninen <matti@mjhanninen.com>"]
+license     = "GPL-3.0-or-later"
 edition     = "2021"
 
 [dependencies]
