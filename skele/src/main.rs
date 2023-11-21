@@ -18,9 +18,9 @@ fn run() -> io::Result<()> {
     let key_source = KeySource::new(&skeleton_key);
     let fingerprint = format_key(&key_source.fingerprint(), 8);
     app_state.learn_fingerprint(&fingerprint);
-    state::save_app_state(&app_state).unwrap_or_else(|_| {
-      println!("Warning: Failed to save application state\n");
-    });
+    if state::save_app_state(&app_state).is_err() {
+      out::warn("Warning", "Failed to save application state")?;
+    }
     if !domain_identity_loop(&key_source)? {
       break;
     }
