@@ -13,12 +13,12 @@ fn main() {
 
 fn run() -> io::Result<()> {
   out::show_notice()?;
-  let mut app_state = state::load_app_state().unwrap_or(state::State::new());
-  while let Some(skeleton_key) = ask_skeleton_key(&app_state)? {
+  let mut state = state::load_app_state().unwrap_or(state::State::new());
+  while let Some(skeleton_key) = ask_skeleton_key(&state)? {
     let key_source = KeySource::new(&skeleton_key);
     let fingerprint = format_key(&key_source.fingerprint(), 8);
-    app_state.learn_fingerprint(&fingerprint);
-    if state::save_app_state(&app_state).is_err() {
+    state.learn_fingerprint(&fingerprint);
+    if state::save_app_state(&state).is_err() {
       out::warn("Warning", "Failed to save application state")?;
     }
     if !domain_identity_loop(&key_source)? {
