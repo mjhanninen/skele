@@ -1,145 +1,88 @@
 //! # Application state
 
 use std::{
-  collections::HashSet,
-  env,
-  fs::{self, File},
-  path::PathBuf,
+  collections::HashMap,
+  fs, io,
+  path::{Path, PathBuf},
   result,
 };
 
-// We pretty much ignore all errors. However we want to use `try!` so we need
-// a result type that too ignores all errors.
-pub type Result<T> = result::Result<T, ()>;
+use directories_next::ProjectDirs;
+use thiserror::Error;
 
-pub fn dot_dir(create: bool) -> Option<PathBuf> {
-  // XXX(soija) TODO: Replace `home_dir` with something else
-  #[allow(deprecated)]
-  env::home_dir().and_then(|mut path| {
-    path.push(".skele");
-    if path.exists() {
-      if path.is_dir() {
-        Some(path)
-      } else {
-        // This is an odd situation. Maybe the user should be notified about
-        // it.
-        None
-      }
-    } else if create {
-      // Failing to create a dot directory is inconvenient but not something
-      // that would make us halt the program. As we're not going to react in
-      // any way just swallow the error.
-      fs::create_dir(&path).ok().and(Some(path))
-    } else {
-      None
-    }
-  })
+pub type Result<T> = result::Result<T, Error>;
+
+#[derive(Debug, Error)]
+pub enum Error {
+  #[error("io error")]
+  Io(#[from] io::Error),
+  #[error("cannot resolve state directory")]
+  NoStateDir,
 }
 
-fn ensure_dot_dir() -> Result<()> {
-  dot_dir(true).map(|_| ()).ok_or(())
-}
-
-#[derive(Debug)]
-pub struct State {
-  pub fingerprints: HashSet<String>,
-}
-
-impl State {
-  pub fn new() -> Self {
-    State {
-      fingerprints: HashSet::new(),
-    }
+/// Ensures that the application state directory exists and returns the path
+/// to it.
+fn ensure_state_dir() -> Result<PathBuf> {
+  let project_dirs =
+    ProjectDirs::from("com", "mjhanninen", "skele").ok_or(Error::NoStateDir)?;
+  let dir = project_dirs.data_local_dir();
+  if !dir.exists() {
+    fs::create_dir_all(dir)?;
   }
-
-  pub fn learn_fingerprint(&mut self, fingerprint: &str) {
-    self.fingerprints.insert(fingerprint.to_owned());
-  }
-
-  pub fn is_known(&self, fingerprint: &str) -> bool {
-    self.fingerprints.contains(fingerprint)
+  if dir.is_dir() {
+    Ok(dir.to_owned())
+  } else {
+    Err(Error::NoStateDir)
   }
 }
 
-use serde::{
-  de::{MapAccess, Visitor},
-  ser::SerializeMap,
-  Deserialize, Deserializer, Serialize, Serializer,
-};
-
-impl Serialize for State {
-  fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
-  where
-    S: Serializer,
-  {
-    let mut map_state =
-      serializer.serialize_map(Some(self.fingerprints.len()))?;
-    for k in &self.fingerprints {
-      map_state.serialize_entry(k, "")?;
-    }
-    map_state.end()
-  }
+pub struct AppState {
+  state_dir: Box<Path>,
 }
 
-struct StateVisitor;
-
-impl<'de> Visitor<'de> for StateVisitor {
-  type Value = State;
-  fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-    fmt.write_str("a map with string values")
+impl AppState {
+  pub fn try_new() -> Result<Self> {
+    Ok(Self {
+      state_dir: ensure_state_dir()?.into_boxed_path(),
+    })
   }
-  fn visit_map<M: MapAccess<'de>>(
-    self,
-    mut access: M,
-  ) -> result::Result<Self::Value, M::Error> {
-    let mut fingerprints = HashSet::new();
-    while let Some((k, _)) = access.next_entry::<String, String>()? {
-      fingerprints.insert(k);
-    }
-    Ok(State { fingerprints })
-  }
-}
 
-impl<'de> Deserialize<'de> for State {
-  fn deserialize<D>(deserializer: D) -> result::Result<Self, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    deserializer.deserialize_map(StateVisitor)
-  }
-}
-
-fn state_file_path(decoration: Option<String>) -> Option<PathBuf> {
-  dot_dir(false).map(|mut path| {
-    let filename = match decoration {
-      Some(ref decoration) => format!("state.{}.json", decoration),
-      None => "state.json".to_owned(),
-    };
-    path.push(filename);
+  fn key_state_path(&self, fingerprint: &str) -> PathBuf {
+    let mut path = PathBuf::from(self.state_dir.as_ref());
+    path.push(format!("{}.keystate", fingerprint));
     path
-  })
+  }
+
+  pub fn learn_fingerprint(&self, fingerprint: &str) -> Result<()> {
+    let path = self.key_state_path(fingerprint);
+    let _ = fs::File::create(path)?;
+    Ok(())
+  }
+
+  pub fn is_known(&self, fingerprint: &str) -> Result<bool> {
+    let path = self.key_state_path(fingerprint);
+    Ok(path.is_file())
+  }
 }
 
-use serde_json::{de, ser};
-
-fn load_app_state_(path: &PathBuf) -> Result<State> {
-  let state_file = File::open(path).or(Err(()))?;
-  de::from_reader(state_file).or(Err(()))
+#[allow(dead_code)]
+pub enum SkeletonKeyState {
+  Locked {
+    ciphered: Box<str>,
+  },
+  Unlocked {
+    credentials: Vec<Credentials>,
+    ciphered: Option<Box<str>>,
+  },
 }
 
-pub fn load_app_state() -> Option<State> {
-  state_file_path(None)
-    .and_then(|path| if path.is_file() { Some(path) } else { None })
-    .and_then(|path| load_app_state_(&path).ok())
+#[allow(dead_code)]
+pub struct Credentials {
+  domain: Box<str>,
+  identity: Box<str>,
 }
 
-pub fn save_app_state(state: &State) -> Result<()> {
-  ensure_dot_dir()?;
-  let temp_path =
-    state_file_path(Some(format!("{}", std::process::id()))).ok_or(())?;
-  let mut temp_file = File::create(&temp_path).or(Err(()))?;
-  ser::to_writer(&mut temp_file, state).or(Err(()))?;
-  let path = state_file_path(None).ok_or(())?;
-  fs::rename(&temp_path, path).or(Err(()))?;
-  Ok(())
+#[allow(dead_code)]
+pub struct NewState {
+  pub fingerprints: HashMap<Box<str>, SkeletonKeyState>,
 }

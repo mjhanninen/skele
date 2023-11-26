@@ -11,16 +11,11 @@ fn main() {
   run().unwrap()
 }
 
-fn run() -> io::Result<()> {
+fn run() -> anyhow::Result<()> {
   out::show_notice()?;
-  let mut state = state::load_app_state().unwrap_or(state::State::new());
+  let state = state::AppState::try_new()?;
   while let Some(skeleton_key) = ask_skeleton_key(&state)? {
     let key_source = KeySource::new(&skeleton_key);
-    let fingerprint = format_key(&key_source.fingerprint(), 8);
-    state.learn_fingerprint(&fingerprint);
-    if state::save_app_state(&state).is_err() {
-      out::warn("Warning", "Failed to save application state")?;
-    }
     if !domain_identity_loop(&key_source)? {
       break;
     }
@@ -28,7 +23,7 @@ fn run() -> io::Result<()> {
   Ok(())
 }
 
-fn ask_skeleton_key(state: &state::State) -> io::Result<Option<String>> {
+fn ask_skeleton_key(state: &state::AppState) -> state::Result<Option<String>> {
   loop {
     let key = match answer::<String>(prompt_one(
       Question::password("key")
@@ -47,7 +42,7 @@ fn ask_skeleton_key(state: &state::State) -> io::Result<Option<String>> {
 
     let key_source = KeySource::new(&key);
     let fingerprint = format_key(&key_source.fingerprint(), 8);
-    if state.is_known(&fingerprint) {
+    if state.is_known(&fingerprint)? {
       out::show_known_key_message(&fingerprint)?;
       return Ok(Some(key));
     }
@@ -94,6 +89,9 @@ fn ask_skeleton_key(state: &state::State) -> io::Result<Option<String>> {
     if let Some(confirmation) = maybe_confirmation {
       assert!(key == confirmation);
       out::info("Key confirmed", "adding the key to the keyring")?;
+      if state.learn_fingerprint(&fingerprint).is_err() {
+        out::warn("Warning", "failed to write the keyring file")?;
+      }
       return Ok(Some(key));
     }
   }
