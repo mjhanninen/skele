@@ -4,8 +4,26 @@ use requestty::{prompt_one, ExpandItem, OnEsc, Question};
 use requestty_utils::{answer, Answer};
 use rustybones::*;
 
+mod ciphered;
 mod clipboard;
+mod kdf;
+mod serde_helpers;
 mod state;
+
+struct SkeletonKey {
+  skeleton_key: Box<str>,
+  #[allow(dead_code)]
+  state: state::KeyState,
+}
+
+impl SkeletonKey {
+  fn new(skeleton_key: &str, state: state::KeyState) -> Self {
+    Self {
+      skeleton_key: skeleton_key.into(),
+      state,
+    }
+  }
+}
 
 fn main() {
   run().unwrap()
@@ -14,8 +32,8 @@ fn main() {
 fn run() -> anyhow::Result<()> {
   out::show_notice()?;
   let state = state::AppState::try_new()?;
-  while let Some(skeleton_key) = ask_skeleton_key(&state)? {
-    let key_source = KeySource::new(&skeleton_key);
+  while let Some(key_state) = ask_skeleton_key(&state)? {
+    let key_source = KeySource::new(&key_state.skeleton_key);
     if !domain_identity_loop(&key_source)? {
       break;
     }
@@ -23,9 +41,11 @@ fn run() -> anyhow::Result<()> {
   Ok(())
 }
 
-fn ask_skeleton_key(state: &state::AppState) -> state::Result<Option<String>> {
+fn ask_skeleton_key(
+  state: &state::AppState,
+) -> Result<Option<SkeletonKey>, state::Error> {
   loop {
-    let key = match answer::<String>(prompt_one(
+    let skeleton_key = match answer::<String>(prompt_one(
       Question::password("key")
         .message("Skeleton key")
         .mask('*')
@@ -35,16 +55,17 @@ fn ask_skeleton_key(state: &state::AppState) -> state::Result<Option<String>> {
       _ => return Ok(None),
     };
 
-    if key.is_empty() {
+    if skeleton_key.is_empty() {
       out::warn("No key", "exiting")?;
       return Ok(None);
     }
 
-    let key_source = KeySource::new(&key);
+    let key_source = KeySource::new(&skeleton_key);
     let fingerprint = format_key(&key_source.fingerprint(), 8);
     if state.is_known(&fingerprint)? {
+      let key_state = state.load_key_state(&fingerprint, &skeleton_key)?;
       out::show_known_key_message(&fingerprint)?;
-      return Ok(Some(key));
+      return Ok(Some(SkeletonKey::new(&skeleton_key, key_state)));
     }
 
     out::show_new_key_warning(&fingerprint)?;
@@ -67,13 +88,15 @@ fn ask_skeleton_key(state: &state::AppState) -> state::Result<Option<String>> {
       Question::password("confirmation")
         .message("Re-enter key")
         .mask('*')
-        .validate_on_key(|confirmation, _| key.starts_with(confirmation))
+        .validate_on_key(|confirmation, _| {
+          skeleton_key.starts_with(confirmation)
+        })
         .validate(|confirmation, _| {
-          if key == confirmation {
+          if skeleton_key == confirmation {
             Ok(())
-          } else if key.starts_with(confirmation) {
+          } else if skeleton_key.starts_with(confirmation) {
             Err("The confirmation is too short".to_owned())
-          } else if confirmation.starts_with(&key) {
+          } else if confirmation.starts_with(&skeleton_key) {
             Err("The confirmation is too long".to_owned())
           } else {
             Err("The confirmation does not match the key".to_owned())
@@ -87,12 +110,10 @@ fn ask_skeleton_key(state: &state::AppState) -> state::Result<Option<String>> {
     };
 
     if let Some(confirmation) = maybe_confirmation {
-      assert!(key == confirmation);
+      assert!(skeleton_key == confirmation);
       out::info("Key confirmed", "adding the key to the keyring")?;
-      if state.learn_fingerprint(&fingerprint).is_err() {
-        out::warn("Warning", "failed to write the keyring file")?;
-      }
-      return Ok(Some(key));
+      let key_state = state.init_key_state(&skeleton_key, &fingerprint)?;
+      return Ok(Some(SkeletonKey::new(&skeleton_key, key_state)));
     }
   }
 }

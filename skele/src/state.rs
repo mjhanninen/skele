@@ -1,28 +1,52 @@
 //! # Application state
 
 use std::{
-  collections::HashMap,
   fs, io,
   path::{Path, PathBuf},
-  result,
+  process,
 };
 
 use directories_next::ProjectDirs;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub type Result<T> = result::Result<T, Error>;
+use crate::{ciphered, kdf};
 
 #[derive(Debug, Error)]
 pub enum Error {
-  #[error("io error")]
+  #[error("i/o error")]
   Io(#[from] io::Error),
   #[error("cannot resolve state directory")]
   NoStateDir,
+  #[error("key derivation operation failed")]
+  KdfOpFailed,
+  #[error("cipher operation failed")]
+  CipherOpFailed,
+  #[error("failed to load skeleton key state")]
+  LoadingKeyStateFailed,
+  #[error("failed to save skeleton key state")]
+  SavingKeyStateFailed,
+}
+
+impl From<kdf::Error> for Error {
+  fn from(err: kdf::Error) -> Self {
+    match err {
+      kdf::Error::KdfOpFailed => Error::KdfOpFailed,
+    }
+  }
+}
+
+impl From<ciphered::Error> for Error {
+  fn from(err: ciphered::Error) -> Self {
+    match err {
+      ciphered::Error::CipherOpFailed => Error::CipherOpFailed,
+    }
+  }
 }
 
 /// Ensures that the application state directory exists and returns the path
 /// to it.
-fn ensure_state_dir() -> Result<PathBuf> {
+fn ensure_state_dir() -> Result<PathBuf, Error> {
   let project_dirs =
     ProjectDirs::from("com", "mjhanninen", "skele").ok_or(Error::NoStateDir)?;
   let dir = project_dirs.data_local_dir();
@@ -41,48 +65,134 @@ pub struct AppState {
 }
 
 impl AppState {
-  pub fn try_new() -> Result<Self> {
+  pub fn try_new() -> Result<Self, Error> {
     Ok(Self {
       state_dir: ensure_state_dir()?.into_boxed_path(),
     })
   }
 
-  fn key_state_path(&self, fingerprint: &str) -> PathBuf {
-    let mut path = PathBuf::from(self.state_dir.as_ref());
-    path.push(format!("{}.keystate", fingerprint));
-    path
+  pub fn init_key_state(
+    &self,
+    skeleton_key: &str,
+    fingerprint: &str,
+  ) -> Result<KeyState, Error> {
+    let key_state = KeyState::new(skeleton_key, fingerprint)?;
+    self.save_key_state(&key_state)?;
+    Ok(key_state)
   }
 
-  pub fn learn_fingerprint(&self, fingerprint: &str) -> Result<()> {
-    let path = self.key_state_path(fingerprint);
-    let _ = fs::File::create(path)?;
+  pub fn is_known(&self, fingerprint: &str) -> Result<bool, Error> {
+    let path = self.key_state_path(fingerprint, false);
+    Ok(path.is_file())
+  }
+
+  pub fn load_key_state(
+    &self,
+    fingerprint: &str,
+    skeleton_key: &str,
+  ) -> Result<KeyState, Error> {
+    let path = self.key_state_path(fingerprint, false);
+    let file = fs::File::open(path)?;
+    let reader = io::BufReader::new(file);
+    let Ok(encrypted) = serde_json::from_reader::<_, EncryptedKeyState>(reader)
+    else {
+      return Err(Error::LoadingKeyStateFailed);
+    };
+    let state = encrypted.decrypt(skeleton_key)?;
+    Ok(state)
+  }
+
+  pub fn save_key_state(&self, key_state: &KeyState) -> Result<(), Error> {
+    let temp_path = self.key_state_path(&key_state.public.fingerprint, true);
+    {
+      let encrypted = key_state.encrypt()?;
+      let file = fs::File::create(&temp_path)?;
+      if serde_json::to_writer_pretty(file, &encrypted).is_err() {
+        return Err(Error::SavingKeyStateFailed);
+      };
+    }
+    let final_path = self.key_state_path(&key_state.public.fingerprint, false);
+    if fs::rename(&temp_path, final_path).is_err() {
+      return Err(Error::SavingKeyStateFailed);
+    }
     Ok(())
   }
 
-  pub fn is_known(&self, fingerprint: &str) -> Result<bool> {
-    let path = self.key_state_path(fingerprint);
-    Ok(path.is_file())
+  fn key_state_path(&self, fingerprint: &str, temporary: bool) -> PathBuf {
+    let mut path = PathBuf::from(self.state_dir.as_ref());
+    if temporary {
+      path.push(format!("{}.json.{}", fingerprint, process::id()));
+    } else {
+      path.push(format!("{}.json", fingerprint));
+    }
+    path
   }
 }
 
-#[allow(dead_code)]
-pub enum SkeletonKeyState {
-  Locked {
-    ciphered: Box<str>,
-  },
-  Unlocked {
-    credentials: Vec<Credentials>,
-    ciphered: Option<Box<str>>,
-  },
+pub struct KeyState {
+  pub key: [u8; 32],
+  pub public: PublicKeyState,
+  pub secret: SecretKeyState,
 }
 
-#[allow(dead_code)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublicKeyState {
+  pub fingerprint: Box<str>,
+  pub kdf: kdf::Kdf,
+}
+
+impl PublicKeyState {
+  fn new(fingerprint: &str, kdf: kdf::Kdf) -> Self {
+    Self {
+      fingerprint: fingerprint.into(),
+      kdf,
+    }
+  }
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct SecretKeyState {
+  pub credentials: Vec<Credentials>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct EncryptedKeyState {
+  pub public: PublicKeyState,
+  pub secret: ciphered::Ciphered,
+}
+
+impl KeyState {
+  pub fn new(skeleton_key: &str, fingerprint: &str) -> Result<Self, Error> {
+    let kdf = kdf::Kdf::default();
+    let key = kdf.derive(skeleton_key)?;
+    Ok(Self {
+      key,
+      public: PublicKeyState::new(fingerprint, kdf),
+      secret: SecretKeyState::default(),
+    })
+  }
+
+  pub fn encrypt(&self) -> Result<EncryptedKeyState, Error> {
+    Ok(EncryptedKeyState {
+      public: self.public.clone(),
+      secret: ciphered::Ciphered::cipher(&self.secret, &self.key)?,
+    })
+  }
+}
+
+impl EncryptedKeyState {
+  pub fn decrypt(self, passphrase: &str) -> Result<KeyState, Error> {
+    let key = self.public.kdf.derive(passphrase)?;
+    Ok(KeyState {
+      key,
+      public: self.public,
+      secret: self.secret.decipher(&key)?,
+    })
+  }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Credentials {
   domain: Box<str>,
   identity: Box<str>,
-}
-
-#[allow(dead_code)]
-pub struct NewState {
-  pub fingerprints: HashMap<Box<str>, SkeletonKeyState>,
 }

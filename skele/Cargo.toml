@@ -13,12 +13,14 @@ edition       = "2021"
 aes-gcm          = "^0.10"
 anyhow           = "^1.0"
 argon2           = "^0.5"
+base64ct         = "*" # argon2 determines
 crossterm        = "^0.25"
 directories-next = "^2.0"
+rand_core        = "*" # aes-gcm and argon2 determines
 requestty        = { version = "^0.5.0", features = ["crossterm"] }
 rpassword        = "^0.2"
 rustybones       = { path = "../rustybones" }
-serde            = "^1.0"
+serde            = { version = "^1.0", features = ["derive"] }
 serde_json       = "^1.0"
 thiserror        = "^1.0"
 
