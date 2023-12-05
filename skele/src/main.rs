@@ -133,7 +133,7 @@ fn domain_identity_loop(key_source: &KeySource) -> io::Result<bool> {
           if input.trim() != input {
             Err("Domain cannot have leading or trailing whitespace".to_owned())
           } else if input.is_empty() {
-            Err("Domain cannot be empty".to_owned())
+            Err("Domain cannot be empty (press Esc to close key)".to_owned())
           } else {
             Ok(())
           }
