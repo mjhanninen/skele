@@ -9,17 +9,20 @@ mod clipboard;
 mod kdf;
 mod serde_helpers;
 mod state;
+mod types;
+
+use types::Passphrase;
 
 struct SkeletonKey {
-  skeleton_key: Box<str>,
+  skeleton_key: Passphrase,
   #[allow(dead_code)]
   state: state::KeyState,
 }
 
 impl SkeletonKey {
-  fn new(skeleton_key: &str, state: state::KeyState) -> Self {
+  fn new(skeleton_key: Passphrase, state: state::KeyState) -> Self {
     Self {
-      skeleton_key: skeleton_key.into(),
+      skeleton_key,
       state,
     }
   }
@@ -33,7 +36,7 @@ fn run() -> anyhow::Result<()> {
   out::show_notice()?;
   let state = state::AppState::try_new()?;
   while let Some(key_state) = ask_skeleton_key(&state)? {
-    let key_source = KeySource::new(&key_state.skeleton_key);
+    let key_source = KeySource::new(key_state.skeleton_key.as_str());
     if !domain_identity_loop(&key_source)? {
       break;
     }
@@ -45,7 +48,7 @@ fn ask_skeleton_key(
   state: &state::AppState,
 ) -> Result<Option<SkeletonKey>, state::Error> {
   loop {
-    let skeleton_key = match answer::<String>(prompt_one(
+    let skeleton_key_str = match answer::<String>(prompt_one(
       Question::password("key")
         .message("Skeleton key")
         .mask('*')
@@ -55,17 +58,19 @@ fn ask_skeleton_key(
       _ => return Ok(None),
     };
 
-    if skeleton_key.is_empty() {
+    if skeleton_key_str.is_empty() {
       out::warn("No key", "exiting")?;
       return Ok(None);
     }
 
-    let key_source = KeySource::new(&skeleton_key);
+    let skeleton_key: Passphrase = skeleton_key_str.into();
+
+    let key_source = KeySource::new(skeleton_key.as_str());
     let fingerprint = format_key(&key_source.fingerprint(), 8);
     if state.is_known(&fingerprint)? {
-      let key_state = state.load_key_state(&fingerprint, &skeleton_key)?;
+      let key_state = state.load_key_state(&skeleton_key, &fingerprint)?;
       out::show_known_key_message(&fingerprint)?;
-      return Ok(Some(SkeletonKey::new(&skeleton_key, key_state)));
+      return Ok(Some(SkeletonKey::new(skeleton_key, key_state)));
     }
 
     out::show_new_key_warning(&fingerprint)?;
@@ -89,14 +94,14 @@ fn ask_skeleton_key(
         .message("Re-enter key")
         .mask('*')
         .validate_on_key(|confirmation, _| {
-          skeleton_key.starts_with(confirmation)
+          skeleton_key.as_str().starts_with(confirmation)
         })
         .validate(|confirmation, _| {
-          if skeleton_key == confirmation {
+          if skeleton_key.as_str() == confirmation {
             Ok(())
-          } else if skeleton_key.starts_with(confirmation) {
+          } else if skeleton_key.as_str().starts_with(confirmation) {
             Err("The confirmation is too short".to_owned())
-          } else if confirmation.starts_with(&skeleton_key) {
+          } else if confirmation.starts_with(skeleton_key.as_str()) {
             Err("The confirmation is too long".to_owned())
           } else {
             Err("The confirmation does not match the key".to_owned())
@@ -110,10 +115,10 @@ fn ask_skeleton_key(
     };
 
     if let Some(confirmation) = maybe_confirmation {
-      assert!(skeleton_key == confirmation);
+      assert!(skeleton_key.as_str() == confirmation);
       out::info("Key confirmed", "adding the key to the keyring")?;
       let key_state = state.init_key_state(&skeleton_key, &fingerprint)?;
-      return Ok(Some(SkeletonKey::new(&skeleton_key, key_state)));
+      return Ok(Some(SkeletonKey::new(skeleton_key, key_state)));
     }
   }
 }

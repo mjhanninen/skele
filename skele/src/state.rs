@@ -10,7 +10,7 @@ use directories_next::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{ciphered, kdf};
+use crate::{ciphered, kdf, types::Passphrase};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -73,7 +73,7 @@ impl AppState {
 
   pub fn init_key_state(
     &self,
-    skeleton_key: &str,
+    skeleton_key: &Passphrase,
     fingerprint: &str,
   ) -> Result<KeyState, Error> {
     let key_state = KeyState::new(skeleton_key, fingerprint)?;
@@ -88,8 +88,8 @@ impl AppState {
 
   pub fn load_key_state(
     &self,
+    skeleton_key: &Passphrase,
     fingerprint: &str,
-    skeleton_key: &str,
   ) -> Result<KeyState, Error> {
     let path = self.key_state_path(fingerprint, false);
     let file = fs::File::open(path)?;
@@ -162,7 +162,10 @@ pub struct EncryptedKeyState {
 }
 
 impl KeyState {
-  pub fn new(skeleton_key: &str, fingerprint: &str) -> Result<Self, Error> {
+  pub fn new(
+    skeleton_key: &Passphrase,
+    fingerprint: &str,
+  ) -> Result<Self, Error> {
     let kdf = kdf::Kdf::default();
     let key = kdf.derive(skeleton_key)?;
     Ok(Self {
@@ -181,8 +184,8 @@ impl KeyState {
 }
 
 impl EncryptedKeyState {
-  pub fn decrypt(self, passphrase: &str) -> Result<KeyState, Error> {
-    let key = self.public.kdf.derive(passphrase)?;
+  pub fn decrypt(self, skeleton_key: &Passphrase) -> Result<KeyState, Error> {
+    let key = self.public.kdf.derive(skeleton_key)?;
     Ok(KeyState {
       key,
       public: self.public,

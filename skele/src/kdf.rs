@@ -2,7 +2,7 @@ use rand_core::RngCore;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
-use crate::serde_helpers::*;
+use crate::{serde_helpers::*, types::Passphrase};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -49,7 +49,7 @@ impl Kdf {
     }
   }
 
-  pub fn derive(&self, passphrase: &str) -> Result<[u8; 32], Error> {
+  pub fn derive(&self, passphrase: &Passphrase) -> Result<[u8; 32], Error> {
     let mut key = [0u8; 32];
     if self
       .argon2()?
