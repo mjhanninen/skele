@@ -1,4 +1,4 @@
-use std::io;
+use std::cmp::Ordering;
 
 use requestty::{prompt_one, ExpandItem, OnEsc, Question};
 use requestty_utils::{answer, Answer};
@@ -13,18 +13,23 @@ mod types;
 
 use types::Passphrase;
 
-struct SkeletonKey {
+// XXX(soija) Not a great name but will do for now.
+struct KeyContainer {
   skeleton_key: Passphrase,
   #[allow(dead_code)]
   state: state::KeyState,
 }
 
-impl SkeletonKey {
-  fn new(skeleton_key: Passphrase, state: state::KeyState) -> Self {
+impl KeyContainer {
+  pub fn new(skeleton_key: Passphrase, state: state::KeyState) -> Self {
     Self {
       skeleton_key,
       state,
     }
+  }
+
+  pub fn key_source(&self) -> KeySource {
+    KeySource::new(self.skeleton_key.as_str())
   }
 }
 
@@ -34,10 +39,9 @@ fn main() {
 
 fn run() -> anyhow::Result<()> {
   out::show_notice()?;
-  let state = state::AppState::try_new()?;
-  while let Some(key_state) = ask_skeleton_key(&state)? {
-    let key_source = KeySource::new(key_state.skeleton_key.as_str());
-    if !domain_identity_loop(&key_source)? {
+  let app_state = state::AppState::try_new()?;
+  while let Some(mut key_container) = ask_skeleton_key(&app_state)? {
+    if !domain_identity_loop(&app_state, &mut key_container)? {
       break;
     }
   }
@@ -46,7 +50,7 @@ fn run() -> anyhow::Result<()> {
 
 fn ask_skeleton_key(
   state: &state::AppState,
-) -> Result<Option<SkeletonKey>, state::Error> {
+) -> Result<Option<KeyContainer>, state::Error> {
   loop {
     let skeleton_key_str = match answer::<String>(prompt_one(
       Question::password("key")
@@ -70,7 +74,7 @@ fn ask_skeleton_key(
     if state.is_known(&fingerprint)? {
       let key_state = state.load_key_state(&skeleton_key, &fingerprint)?;
       out::show_known_key_message(&fingerprint)?;
-      return Ok(Some(SkeletonKey::new(skeleton_key, key_state)));
+      return Ok(Some(KeyContainer::new(skeleton_key, key_state)));
     }
 
     out::show_new_key_warning(&fingerprint)?;
@@ -118,13 +122,20 @@ fn ask_skeleton_key(
       assert!(skeleton_key.as_str() == confirmation);
       out::info("Key confirmed", "adding the key to the keyring")?;
       let key_state = state.init_key_state(&skeleton_key, &fingerprint)?;
-      return Ok(Some(SkeletonKey::new(skeleton_key, key_state)));
+      return Ok(Some(KeyContainer::new(skeleton_key, key_state)));
     }
   }
 }
 
-fn domain_identity_loop(key_source: &KeySource) -> io::Result<bool> {
+use requestty::question::completions;
+
+fn domain_identity_loop(
+  app_state: &state::AppState,
+  key_container: &mut KeyContainer,
+) -> Result<bool, state::Error> {
   loop {
+    // This limits the scope of borrowing the credentials from the key state.
+
     let domain = match answer::<String>(prompt_one(
       Question::input("domain")
         .message("Domain")
@@ -137,6 +148,43 @@ fn domain_identity_loop(key_source: &KeySource) -> io::Result<bool> {
           } else {
             Ok(())
           }
+        })
+        .auto_complete(|partial, _| {
+          struct Candidate {
+            domain: Box<str>,
+            total_count: u16,
+          }
+          let mut candidates = Vec::<Candidate>::new();
+          for credentials in key_container.state.secret.credentials.iter() {
+            if credentials.domain.starts_with(&partial) {
+              if let Some(candidate) = candidates
+                .iter_mut()
+                .find(|candidate| candidate.domain == credentials.domain)
+              {
+                candidate.total_count += credentials.count;
+              } else {
+                candidates.push(Candidate {
+                  domain: credentials.domain.clone(),
+                  total_count: credentials.count,
+                });
+              }
+            }
+          }
+          if !candidates.is_empty() {
+            candidates.sort_by(|l, r| {
+              // primary factor = descending in total count
+              // secondary factor = ascending in domain
+              match r.total_count.cmp(&l.total_count) {
+                Ordering::Equal => l.domain.as_ref().cmp(&r.domain),
+                ordering => ordering,
+              }
+            });
+            return candidates
+              .into_iter()
+              .map(|candidate| candidate.domain.to_string())
+              .collect();
+          }
+          completions![partial]
         })
         .on_esc(OnEsc::Terminate),
     ))? {
@@ -159,6 +207,43 @@ fn domain_identity_loop(key_source: &KeySource) -> io::Result<bool> {
           } else {
             Ok(())
           }
+        })
+        .auto_complete(|partial, _| {
+          struct Candidate {
+            identity: Box<str>,
+            count: u16,
+          }
+          let mut candidates = key_container
+            .state
+            .secret
+            .credentials
+            .iter()
+            .filter_map(|credentials| {
+              if credentials.domain.as_ref() == domain
+                && credentials.identity.starts_with(&partial)
+              {
+                Some(Candidate {
+                  identity: credentials.identity.clone(),
+                  count: credentials.count,
+                })
+              } else {
+                None
+              }
+            })
+            .collect::<Vec<_>>();
+          if !candidates.is_empty() {
+            candidates.sort_by(|l, r| match r.count.cmp(&l.count) {
+              // primary ordering = descending in count
+              // secondary ordering = ascending in identity
+              Ordering::Equal => l.identity.as_ref().cmp(&r.identity),
+              ordering => ordering,
+            });
+            return candidates
+              .into_iter()
+              .map(|candidate| candidate.identity.to_string())
+              .collect();
+          }
+          completions![partial]
         })
         .on_esc(OnEsc::Terminate),
     ))? {
@@ -190,6 +275,11 @@ fn domain_identity_loop(key_source: &KeySource) -> io::Result<bool> {
       _ => return Ok(false),
     };
 
+    key_container.state.touch(&domain, &identity);
+    app_state.save_key_state(&key_container.state)?;
+
+    // XXX(soija) TOOD: Get rid of this legacy key source.
+    let key_source = key_container.key_source();
     match action {
       Action::CopyToClipboard => {
         if let Some(key) = key_source.keys(&domain, &identity).next() {

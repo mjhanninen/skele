@@ -181,6 +181,25 @@ impl KeyState {
       secret: ciphered::Ciphered::cipher(&self.secret, &self.key)?,
     })
   }
+
+  /// Memorizes the given domain-identity pair.  Returns `true` iff the state
+  /// did not know the pair already.
+  pub fn touch(&mut self, domain: &str, identity: &str) {
+    if let Some(c) =
+      self.secret.credentials.iter_mut().find(|c| {
+        c.domain.as_ref() == domain && c.identity.as_ref() == identity
+      })
+    {
+      c.count += 1;
+    } else {
+      self.secret.credentials.push(Credentials {
+        domain: domain.into(),
+        identity: identity.into(),
+        count: 1,
+      });
+    }
+    self.secret.credentials.sort_by_cached_key(|c| c.count);
+  }
 }
 
 impl EncryptedKeyState {
@@ -196,6 +215,7 @@ impl EncryptedKeyState {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Credentials {
-  domain: Box<str>,
-  identity: Box<str>,
+  pub domain: Box<str>,
+  pub identity: Box<str>,
+  pub count: u16,
 }
