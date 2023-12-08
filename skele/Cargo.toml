@@ -1,6 +1,6 @@
 [package]
 name          = "skele"
-version       = "0.3.0"
+version       = "0.4.0"
 authors       = ["Matti Hänninen <matti@mjhanninen.com>"]
 description   = "Command line tool for calculating passwords for online identities"
 homepage      = "https://github.com/mjhanninen/skele.git"
