@@ -1,8 +1,8 @@
 Skele
 =====
 
-> 🖐 **Warning:** Do not use this.  Just don't.  Way better alternatives that are
-> actually secure exist.
+> 🖐  **Warning:**  Do not use this.  Just don't.  There exist way better
+> alternatives that are actually secure.
 
 **Skele** is a command line utility for computing unique passwords for different
 services and identities.
